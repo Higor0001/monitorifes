@@ -3,21 +3,15 @@ main = "src/index.js"
 compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Diretório estático para compatibilidade com Cloudflare Pages & Wrangler
 [site]
 bucket = "./public"
 
 # Agendamento Automático nos 7 horários específicos (Horário de Brasília / UTC-3):
-# 08:00 (11:00 UTC), 12:00 (15:00 UTC), 14:00 (17:00 UTC), 17:00 (20:00 UTC), 18:00 (21:00 UTC), 20:00 (23:00 UTC), 23:00 (02:00 UTC)
+# 08:00 (11 UTC), 12:00 (15 UTC), 14:00 (17 UTC), 17:00 (20 UTC), 18:00 (21 UTC), 20:00 (23 UTC), 23:00 (02 UTC)
 [triggers]
 crons = [
-  "0 11 * * *",
-  "0 15 * * *",
-  "0 17 * * *",
-  "0 20 * * *",
-  "0 21 * * *",
-  "0 23 * * *",
-  "0 2 * * *"
+  "0 11,15,17 * * *",
+  "0 2,20,21,23 * * *"
 ]
 
 # Variáveis de Ambiente e Credenciais do Telegram
