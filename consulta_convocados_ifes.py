@@ -47,13 +47,21 @@ def fetch_page_html(url):
     """Requisita o HTML completo da página do edital."""
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
     with urllib.request.urlopen(req, context=ctx) as response:
-        return response.read().decode('utf-8', errors='ignore')
+        raw = response.read()
+        try:
+            return raw.decode('utf-8')
+        except Exception:
+            return raw.decode('iso-8859-1', errors='ignore')
 
 def download_file(url):
     """Baixa arquivos (PDFs) tratando caracteres especiais de URL."""
-    parsed = urllib.parse.urlparse(url)
-    safe_path = urllib.parse.quote(parsed.path)
-    safe_url = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, safe_path, parsed.params, parsed.query, parsed.fragment))
+    if not url:
+        return b''
+    unquoted = urllib.parse.unquote(url.strip())
+    parsed = urllib.parse.urlparse(unquoted)
+    encoded_path = urllib.parse.quote(parsed.path, safe='/', encoding='utf-8')
+    encoded_query = urllib.parse.quote(parsed.query, safe='=&', encoding='utf-8')
+    safe_url = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, encoded_path, parsed.params, encoded_query, parsed.fragment))
     req = urllib.request.Request(safe_url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
     with urllib.request.urlopen(req, context=ctx) as response:
         return response.read()
@@ -111,6 +119,16 @@ def parse_quadro_vagas(soup):
                     })
     return vagas
 
+def safe_url_encode(url_str):
+    """Codifica a acentuação e espaços em URLs para o padrão RFC 3986 válido em HTTP (evitando dupla codificação)."""
+    if not url_str:
+        return ''
+    unquoted = urllib.parse.unquote(url_str.strip())
+    parsed = urllib.parse.urlparse(unquoted)
+    encoded_path = urllib.parse.quote(parsed.path, safe='/', encoding='utf-8')
+    encoded_query = urllib.parse.quote(parsed.query, safe='=&', encoding='utf-8')
+    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, encoded_path, parsed.params, encoded_query, parsed.fragment))
+
 def parse_documentos_e_links(soup, base_url):
     """Extrai publicações, links de editais, formulários e resultados."""
     documentos = []
@@ -119,7 +137,7 @@ def parse_documentos_e_links(soup, base_url):
     for a in main_content.find_all('a', href=True):
         href = a['href']
         text = a.get_text(strip=True)
-        full_url = urllib.parse.urljoin(base_url, href)
+        full_url = safe_url_encode(urllib.parse.urljoin(base_url, href))
         
         if any(ext in href.lower() for ext in ['.pdf', 'forms.gle', 'gedoc', 'documento']) or \
            any(kw in text.upper() for kw in ['EDITAL', 'INSCRIÇÃO', 'RESULTADO', 'CONVOCAÇÃO', 'MATRÍCULA', 'ELETROMECÂNICA', 'INFORMÁTICA', 'MINERAÇÃO']):
