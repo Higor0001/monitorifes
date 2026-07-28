@@ -1,0 +1,35 @@
+name = "monitorifes"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Agendamento Automático (Cron Trigger - a cada 5 minutos)
+[triggers]
+crons = ["*/5 * * * *"]
+
+# Variáveis de Ambiente e Credenciais do Telegram
+[vars]
+URL_EDITAL = "https://cachoeiro.ifes.edu.br/processosseletivos/alunos/17163-edital-19-2026-chamada-publica-de-oferta-de-vagas-dos-cursos-tecnicos-concomitante-e-subsequente"
+TELEGRAM_CHAT_ID = "5549055698"
+TELEGRAM_TOKEN = "8928855109:AAGU-Pa-6btwGYN2qVZhqbQ7M3pO9-aGKnU"
+
+# Storage KV para Estado do Monitor
+[[kv_namespaces]]
+binding = "STATE_KV"
+id = "monitor_state_kv"
+
+# Configuração de Observabilidade e Logs
+[observability]
+enabled = false
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+persist = true
+head_sampling_rate = 1
