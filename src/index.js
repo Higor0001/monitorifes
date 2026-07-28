@@ -1,10 +1,5 @@
 /**
  * Cloudflare Worker - Monitor Full-Time, Estado da Página & Extrator de Convocados IFES Cachoeiro
- * 
- * Recursos:
- * 1. Grava o estado completo da página (Metadados de Atualização, Quadro de Datas/Cronograma, PDFs/Anexos e Convocados).
- * 2. Monitora periodicamente (Cron 24h ou 5 min) e compara o estado gravado com o estado atual.
- * 3. Permite acionamento manual instantâneo via botão do Telegram ou URL HTTP.
  */
 
 import { extractText } from 'unpdf';
@@ -16,16 +11,16 @@ let estadoGlobalMemoria = null;
 export default {
   // Executado periodicamente pelo Cron Trigger (a cada 24 horas)
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(verificarEditalEEnviarResultados(env));
+    ctx.waitUntil(verificarEditalEEnviarResultados(env, false, false));
   },
 
   // Executado quando acessado manualmente via navegador ou clique no botão do Telegram
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const forceReset = url.searchParams.get("reset") === "true" || url.searchParams.get("force") === "true";
     const workerUrl = `${url.protocol}//${url.host}`;
     
-    const resultado = await verificarEditalEEnviarResultados(env, true, forceReset, workerUrl);
+    // Sempre envia o relatório completo no Telegram quando o usuário clica no botão ou acessa a URL
+    const resultado = await verificarEditalEEnviarResultados(env, true, true, workerUrl);
     return new Response(JSON.stringify(resultado, null, 2), {
       headers: { "Content-Type": "application/json; charset=utf-8" }
     });
@@ -301,7 +296,7 @@ async function verificarEditalEEnviarResultados(env, manualTest = false, forceRe
     let mensagensTelegram = [];
 
     if (diff.primeiraExecucao || forceReset) {
-      let msgAtual = `📌 <b>ESTADO DA PÁGINA REGISTRADO HOJE (${new Date().toLocaleDateString('pt-BR')})</b>\n`;
+      let msgAtual = `📌 <b>CONSULTA EM TEMPO REAL - EDITAL IFES CACHOEIRO</b>\n`;
       msgAtual += `<b>Edital:</b> <a href="${targetUrl}">Chamada Pública IFES Edital 19/2026</a>\n`;
       msgAtual += `🕒 <b>Última Atualização no Site:</b> ${meta.modificado}\n\n`;
 
@@ -378,8 +373,8 @@ async function verificarEditalEEnviarResultados(env, manualTest = false, forceRe
       await salvarEstado(env, estadoAtual);
     }
 
-    const token = env.TELEGRAM_TOKEN;
-    const chatId = env.TELEGRAM_CHAT_ID;
+    const token = env.TELEGRAM_TOKEN || "8928855109:AAGU-Pa-6btwGYN2qVZhqbQ7M3pO9-aGKnU";
+    const chatId = env.TELEGRAM_CHAT_ID || "5549055698";
 
     if (token && chatId && mensagensTelegram.length > 0) {
       for (const msgPart of mensagensTelegram) {
@@ -417,7 +412,7 @@ async function enviarTelegram(token, chatId, text, workerUrl = "") {
   if (workerUrl) {
     body.reply_markup = {
       inline_keyboard: [
-        [{ text: "🔄 Consultar IFES Agora em Tempo Real", url: `${workerUrl}?reset=true` }]
+        [{ text: "🔄 Consultar IFES Agora em Tempo Real", url: workerUrl }]
       ]
     };
   }
