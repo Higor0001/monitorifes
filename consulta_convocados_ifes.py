@@ -414,7 +414,7 @@ def main():
     parser = argparse.ArgumentParser(description="Consulta e Monitoramento Full-Time IFES Cachoeiro")
     parser.add_argument("--url", type=str, default=URL_EDITAL_PADRAO, help="URL completa do Edital no portal IFES")
     parser.add_argument("--monitor", action="store_true", help="Ativa o modo de monitoramento contínuo (Full-Time)")
-    parser.add_argument("--intervalo", type=int, default=300, help="Intervalo em segundos entre verificações (Padrão: 300s / 5min)")
+    parser.add_argument("--intervalo", type=int, default=86400, help="Intervalo em segundos entre verificações (Padrão: 86400s / 24 horas)")
     parser.add_argument("--webhook", type=str, help="URL de Webhook para enviar notificações (Discord / Slack / Telegram)")
     
     parser.add_argument("--cronograma", action="store_true", help="Exibe apenas o cronograma do edital")
