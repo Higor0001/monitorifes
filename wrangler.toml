@@ -3,9 +3,18 @@ main = "src/index.js"
 compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Agendamento Automático (Cron Trigger - a cada 24 horas às 08:00 UTC)
+# Agendamento Automático nos 7 horários específicos (Horário de Brasília / UTC-3):
+# 08:00 (11:00 UTC), 12:00 (15:00 UTC), 14:00 (17:00 UTC), 17:00 (20:00 UTC), 18:00 (21:00 UTC), 20:00 (23:00 UTC), 23:00 (02:00 UTC)
 [triggers]
-crons = ["0 8 * * *"]
+crons = [
+  "0 11 * * *",
+  "0 15 * * *",
+  "0 17 * * *",
+  "0 20 * * *",
+  "0 21 * * *",
+  "0 23 * * *",
+  "0 2 * * *"
+]
 
 # Variáveis de Ambiente e Credenciais do Telegram
 [vars]

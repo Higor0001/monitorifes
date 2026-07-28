@@ -1,5 +1,8 @@
 /**
- * Cloudflare Worker - Monitor Full-Time, Estado da Página & Extrator de Convocados IFES Cachoeiro
+ * Cloudflare Worker - Monitor Full-Time IFES Cachoeiro
+ * 
+ * Agendamento: 08:00, 12:00, 14:00, 17:00, 18:00, 20:00, 23:00 (Horário de Brasília)
+ * Suporte a Telegram Webhook (Responde instantaneamente a qualquer mensagem enviada para o bot no Telegram)
  */
 
 import { extractText } from 'unpdf';
@@ -9,17 +12,41 @@ const URL_EDITAL_PADRAO = "https://cachoeiro.ifes.edu.br/processosseletivos/alun
 let estadoGlobalMemoria = null;
 
 export default {
-  // Executado periodicamente pelo Cron Trigger (a cada 24 horas)
+  // Executado nos 7 horários fixos configurados (8h, 12h, 14h, 17h, 18h, 20h, 23h)
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(verificarEditalEEnviarResultados(env, false, false));
+    ctx.waitUntil(verificarEditalEEnviarResultados(env, false, true));
   },
 
-  // Executado quando acessado manualmente via navegador ou clique no botão do Telegram
+  // Executado via HTTP GET ou Telegram Webhook (POST) quando o usuário envia mensagem no Telegram
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const workerUrl = `${url.protocol}//${url.host}`;
-    
-    // Sempre envia o relatório completo no Telegram quando o usuário clica no botão ou acessa a URL
+
+    // 1. Se for mensagem recebida via TELEGRAM WEBHOOK (POST)
+    if (request.method === "POST") {
+      try {
+        const update = await request.json();
+        if (update && update.message && update.message.chat) {
+          const chatId = update.message.chat.id;
+          ctx.waitUntil(verificarEditalEEnviarResultados(env, true, true, workerUrl, chatId));
+        }
+      } catch (e) {
+        console.error("Erro no webhook do Telegram:", e);
+      }
+      return new Response("OK", { status: 200 });
+    }
+
+    // 2. Se for acesso via navegador HTTP GET ou rota de registrar webhook (?setup_webhook=true)
+    if (url.searchParams.get("setup_webhook") === "true") {
+      const token = env.TELEGRAM_TOKEN || "8928855109:AAGU-Pa-6btwGYN2qVZhqbQ7M3pO9-aGKnU";
+      const webhookRes = await fetch(`https://api.telegram.org/bot${token}/setWebhook?url=${workerUrl}`);
+      const webhookJson = await webhookRes.json();
+      return new Response(JSON.stringify(webhookJson, null, 2), {
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    // Acesso normal HTTP GET -> envia relatório e retorna JSON
     const resultado = await verificarEditalEEnviarResultados(env, true, true, workerUrl);
     return new Response(JSON.stringify(resultado, null, 2), {
       headers: { "Content-Type": "application/json; charset=utf-8" }
@@ -233,7 +260,7 @@ function compararEstados(antigo, novo) {
   return mudancas;
 }
 
-async function verificarEditalEEnviarResultados(env, manualTest = false, forceReset = false, workerUrl = "") {
+async function verificarEditalEEnviarResultados(env, manualTest = false, forceReset = false, workerUrl = "", overrideChatId = null) {
   const targetUrl = env.URL_EDITAL || URL_EDITAL_PADRAO;
   console.log(`Checando edital no IFES: ${targetUrl}`);
 
@@ -296,7 +323,7 @@ async function verificarEditalEEnviarResultados(env, manualTest = false, forceRe
     let mensagensTelegram = [];
 
     if (diff.primeiraExecucao || forceReset) {
-      let msgAtual = `📌 <b>CONSULTA EM TEMPO REAL - EDITAL IFES CACHOEIRO</b>\n`;
+      let msgAtual = `📌 <b>RELATÓRIO DO EDITAL IFES CACHOEIRO</b>\n`;
       msgAtual += `<b>Edital:</b> <a href="${targetUrl}">Chamada Pública IFES Edital 19/2026</a>\n`;
       msgAtual += `🕒 <b>Última Atualização no Site:</b> ${meta.modificado}\n\n`;
 
@@ -374,7 +401,7 @@ async function verificarEditalEEnviarResultados(env, manualTest = false, forceRe
     }
 
     const token = env.TELEGRAM_TOKEN || "8928855109:AAGU-Pa-6btwGYN2qVZhqbQ7M3pO9-aGKnU";
-    const chatId = env.TELEGRAM_CHAT_ID || "5549055698";
+    const chatId = overrideChatId || env.TELEGRAM_CHAT_ID || "5549055698";
 
     if (token && chatId && mensagensTelegram.length > 0) {
       for (const msgPart of mensagensTelegram) {
