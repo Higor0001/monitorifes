@@ -1,8 +1,5 @@
 /**
- * Cloudflare Worker - Monitor Full-Time IFES Cachoeiro
- * 
- * Agendamento: 08:00, 12:00, 14:00, 17:00, 18:00, 20:00, 23:00 (Horário de Brasília)
- * Suporte a Telegram Webhook (Responde instantaneamente a qualquer mensagem enviada para o bot no Telegram)
+ * Cloudflare Worker - Monitor Full-Time IFES Cachoeiro com codificação segura de URLs com acentuação
  */
 
 import { extractText } from 'unpdf';
@@ -12,17 +9,14 @@ const URL_EDITAL_PADRAO = "https://cachoeiro.ifes.edu.br/processosseletivos/alun
 let estadoGlobalMemoria = null;
 
 export default {
-  // Executado nos 7 horários fixos configurados (8h, 12h, 14h, 17h, 18h, 20h, 23h)
   async scheduled(event, env, ctx) {
     ctx.waitUntil(verificarEditalEEnviarResultados(env, false, true));
   },
 
-  // Executado via HTTP GET ou Telegram Webhook (POST) quando o usuário envia mensagem no Telegram
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const workerUrl = `${url.protocol}//${url.host}`;
 
-    // 1. Se for mensagem recebida via TELEGRAM WEBHOOK (POST)
     if (request.method === "POST") {
       try {
         const update = await request.json();
@@ -36,7 +30,6 @@ export default {
       return new Response("OK", { status: 200 });
     }
 
-    // 2. Se for acesso via navegador HTTP GET ou rota de registrar webhook (?setup_webhook=true)
     if (url.searchParams.get("setup_webhook") === "true") {
       const token = env.TELEGRAM_TOKEN || "8928855109:AAGU-Pa-6btwGYN2qVZhqbQ7M3pO9-aGKnU";
       const webhookRes = await fetch(`https://api.telegram.org/bot${token}/setWebhook?url=${workerUrl}`);
@@ -46,13 +39,22 @@ export default {
       });
     }
 
-    // Acesso normal HTTP GET -> envia relatório e retorna JSON
     const resultado = await verificarEditalEEnviarResultados(env, true, true, workerUrl);
     return new Response(JSON.stringify(resultado, null, 2), {
       headers: { "Content-Type": "application/json; charset=utf-8" }
     });
   }
 };
+
+function encodeSafeUrl(urlStr) {
+  if (!urlStr) return '';
+  try {
+    // encodeURI codifica caracteres especiais como 'á', 'ã', 'ç', espaços, mantendo a estrutura da URL válida (RFC 3986)
+    return encodeURI(urlStr.trim());
+  } catch (e) {
+    return urlStr;
+  }
+}
 
 function decodeHtmlEntities(str) {
   if (!str) return '';
@@ -119,9 +121,10 @@ function extrairLinksDocumentos(html, baseUrl) {
         rawLink = new URL(rawLink, baseUrl).href;
       } catch (e) {}
     }
-    const dec = decodeURIComponent(rawLink).toLowerCase();
-    if ((dec.includes(".pdf") || dec.includes("gedoc") || dec.includes("documento")) && !links.includes(rawLink)) {
-      links.push(rawLink);
+    const safeLink = encodeSafeUrl(rawLink);
+    const dec = decodeURIComponent(safeLink).toLowerCase();
+    if ((dec.includes(".pdf") || dec.includes("gedoc") || dec.includes("documento")) && !links.includes(safeLink)) {
+      links.push(safeLink);
     }
   }
   return links;
@@ -286,7 +289,8 @@ async function verificarEditalEEnviarResultados(env, manualTest = false, forceRe
 
     for (const pdfUrl of pdfsParaAnalisar) {
       try {
-        const pdfResp = await fetch(pdfUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+        const safePdfUrl = encodeSafeUrl(pdfUrl);
+        const pdfResp = await fetch(safePdfUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
         if (pdfResp.ok) {
           const pdfBuffer = await pdfResp.arrayBuffer();
           let nomeDoc = decodeURIComponent(pdfUrl.split('/').pop().replace('.pdf', ''));
@@ -336,7 +340,8 @@ async function verificarEditalEEnviarResultados(env, manualTest = false, forceRe
       msgAtual += `📑 <b>DOCUMENTOS E ANEXOS PUBLICADOS:</b>\n`;
       for (const l of linksDocumentos) {
         let filename = decodeURIComponent(l.split('/').pop());
-        msgAtual += `  • <a href="${l}">${filename}</a>\n`;
+        let safeLink = encodeSafeUrl(l);
+        msgAtual += `  • <a href="${safeLink}">${filename}</a>\n`;
       }
       msgAtual += `\n`;
 
@@ -384,7 +389,8 @@ async function verificarEditalEEnviarResultados(env, manualTest = false, forceRe
         msgDiff += `📑 <b>NOVOS DOCUMENTOS/ANEXOS PUBLICADOS:</b>\n`;
         for (const l of diff.novosLinks) {
           let filename = decodeURIComponent(l.split('/').pop());
-          msgDiff += `  • <a href="${l}">${filename}</a>\n`;
+          let safeLink = encodeSafeUrl(l);
+          msgDiff += `  • <a href="${safeLink}">${filename}</a>\n`;
         }
         msgDiff += `\n`;
       }
