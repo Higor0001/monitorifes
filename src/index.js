@@ -3,33 +3,29 @@
  * 
  * Recursos:
  * 1. Grava o estado completo da página (Metadados de Atualização, Quadro de Datas/Cronograma, PDFs/Anexos e Convocados).
- * 2. Monitora periodicamente (Cron 5 em 5 min) e compara o estado gravado com o estado atual.
- * 3. Notifica detalhadamente qualquer alteração detectada:
- *    - Mudança na data de atualização da página ("Última atualização em...")
- *    - Mudança/Inclusão de eventos e datas no Quadro de Datas (Cronograma)
- *    - Novos arquivos PDFs/Anexos publicados no site
- *    - Mudanças na lista de candidatos convocados extraídos dos PDFs
+ * 2. Monitora periodicamente (Cron 24h ou 5 min) e compara o estado gravado com o estado atual.
+ * 3. Permite acionamento manual instantâneo via botão do Telegram ou URL HTTP.
  */
 
 import { extractText } from 'unpdf';
 
 const URL_EDITAL_PADRAO = "https://cachoeiro.ifes.edu.br/processosseletivos/alunos/17163-edital-19-2026-chamada-publica-de-oferta-de-vagas-dos-cursos-tecnicos-concomitante-e-subsequente";
 
-// Fallback de estado em memória global (durante o ciclo de vida da instância do worker)
 let estadoGlobalMemoria = null;
 
 export default {
-  // Executado periodicamente pelo Cron Trigger (a cada 5 minutos)
+  // Executado periodicamente pelo Cron Trigger (a cada 24 horas)
   async scheduled(event, env, ctx) {
     ctx.waitUntil(verificarEditalEEnviarResultados(env));
   },
 
-  // Executado quando acessado manualmente pelo navegador
+  // Executado quando acessado manualmente via navegador ou clique no botão do Telegram
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const forceReset = url.searchParams.get("reset") === "true" || url.searchParams.get("force") === "true";
+    const workerUrl = `${url.protocol}//${url.host}`;
     
-    const resultado = await verificarEditalEEnviarResultados(env, true, forceReset);
+    const resultado = await verificarEditalEEnviarResultados(env, true, forceReset, workerUrl);
     return new Response(JSON.stringify(resultado, null, 2), {
       headers: { "Content-Type": "application/json; charset=utf-8" }
     });
@@ -208,13 +204,11 @@ function compararEstados(antigo, novo) {
     convocadosMudaram: false
   };
 
-  // 1. Checa data de modificação da página
   if (antigo.meta.modificado !== novo.meta.modificado) {
     mudancas.modificacaoDataMudou = true;
     mudancas.temMudanca = true;
   }
 
-  // 2. Checa mudanças no Quadro de Datas
   for (let i = 0; i < novo.cronograma.length; i++) {
     const itemNovo = novo.cronograma[i];
     const itemAntigo = antigo.cronograma[i];
@@ -228,7 +222,6 @@ function compararEstados(antigo, novo) {
     }
   }
 
-  // 3. Checa novos links/PDFs no site
   const linksAntigos = new Set(antigo.links);
   for (const link of novo.links) {
     if (!linksAntigos.has(link)) {
@@ -237,7 +230,6 @@ function compararEstados(antigo, novo) {
     }
   }
 
-  // 4. Checa alterações nos Convocados
   if (antigo.totalConvocados !== novo.totalConvocados) {
     mudancas.convocadosMudaram = true;
     mudancas.temMudanca = true;
@@ -246,7 +238,7 @@ function compararEstados(antigo, novo) {
   return mudancas;
 }
 
-async function verificarEditalEEnviarResultados(env, manualTest = false, forceReset = false) {
+async function verificarEditalEEnviarResultados(env, manualTest = false, forceReset = false, workerUrl = "") {
   const targetUrl = env.URL_EDITAL || URL_EDITAL_PADRAO;
   console.log(`Checando edital no IFES: ${targetUrl}`);
 
@@ -258,12 +250,10 @@ async function verificarEditalEEnviarResultados(env, manualTest = false, forceRe
     if (!resp.ok) throw new Error(`Erro HTTP ${resp.status}`);
     const html = await resp.text();
 
-    // Extrair componentes do estado atual da página
     const meta = extrairMetadados(html);
     const cronograma = extrairCronograma(html);
     const linksDocumentos = extrairLinksDocumentos(html, targetUrl);
 
-    // Processar PDFs para candidatos
     const pdfsParaAnalisar = linksDocumentos.filter(url => {
       const u = decodeURIComponent(url).toLowerCase();
       return u.includes(".pdf") && !u.includes("portaria_n") && !u.includes("documentos_necess");
@@ -311,7 +301,6 @@ async function verificarEditalEEnviarResultados(env, manualTest = false, forceRe
     let mensagensTelegram = [];
 
     if (diff.primeiraExecucao || forceReset) {
-      // 1. PRIMEIRA EXECUÇÃO / BASELINE: Envia relatório completo com estado gravado hoje!
       let msgAtual = `📌 <b>ESTADO DA PÁGINA REGISTRADO HOJE (${new Date().toLocaleDateString('pt-BR')})</b>\n`;
       msgAtual += `<b>Edital:</b> <a href="${targetUrl}">Chamada Pública IFES Edital 19/2026</a>\n`;
       msgAtual += `🕒 <b>Última Atualização no Site:</b> ${meta.modificado}\n\n`;
@@ -352,7 +341,6 @@ async function verificarEditalEEnviarResultados(env, manualTest = false, forceRe
       await salvarEstado(env, estadoAtual);
 
     } else if (diff.temMudanca) {
-      // 2. MUDANÇA DETECTADA: Envia Alerta Específico de O que Mudou na Página!
       let msgDiff = `🚨 <b>ALERTA DE ATUALIZAÇÃO NO EDITAL IFES!</b>\n`;
       msgDiff += `<b>Página:</b> <a href="${targetUrl}">Chamada Pública IFES</a>\n\n`;
 
@@ -387,23 +375,15 @@ async function verificarEditalEEnviarResultados(env, manualTest = false, forceRe
       msgDiff += `🔔 <i>Verifique o site oficial para mais informações.</i>`;
       mensagensTelegram.push(msgDiff);
 
-      // Salva o novo estado atualizado
       await salvarEstado(env, estadoAtual);
     }
 
     const token = env.TELEGRAM_TOKEN;
     const chatId = env.TELEGRAM_CHAT_ID;
 
-    // Envia Telegram somente se houver mensagens acumuladas (mudança ou baseline)
     if (token && chatId && mensagensTelegram.length > 0) {
       for (const msgPart of mensagensTelegram) {
-        await enviarTelegram(token, chatId, msgPart);
-      }
-    }
-
-    if (env.DISCORD_WEBHOOK && mensagensTelegram.length > 0) {
-      for (const msgPart of mensagensTelegram) {
-        await enviarDiscord(env.DISCORD_WEBHOOK, msgPart);
+        await enviarTelegram(token, chatId, msgPart, workerUrl);
       }
     }
 
@@ -425,20 +405,26 @@ async function verificarEditalEEnviarResultados(env, manualTest = false, forceRe
   }
 }
 
-async function enviarTelegram(token, chatId, text) {
+async function enviarTelegram(token, chatId, text, workerUrl = "") {
   const url = `https://api.telegram.org/bot${token}/sendMessage`;
+  const body = {
+    chat_id: chatId,
+    text: text,
+    parse_mode: "HTML",
+    disable_web_page_preview: true
+  };
+
+  if (workerUrl) {
+    body.reply_markup = {
+      inline_keyboard: [
+        [{ text: "🔄 Consultar IFES Agora em Tempo Real", url: `${workerUrl}?reset=true` }]
+      ]
+    };
+  }
+
   await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text: text, parse_mode: "HTML", disable_web_page_preview: true })
-  });
-}
-
-async function enviarDiscord(webhookUrl, text) {
-  const discordText = text.replace(/<b>(.*?)<\/b>/gi, '**$1**').replace(/<i>(.*?)<\/i>/gi, '*$1*').replace(/<a href="(.*?)">(.*?)<\/a>/gi, '[$2]($1)');
-  await fetch(webhookUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content: discordText })
+    body: JSON.stringify(body)
   });
 }
