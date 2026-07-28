@@ -13,11 +13,6 @@ URL_EDITAL = "https://cachoeiro.ifes.edu.br/processosseletivos/alunos/17163-edit
 TELEGRAM_CHAT_ID = "5549055698"
 TELEGRAM_TOKEN = "8928855109:AAGU-Pa-6btwGYN2qVZhqbQ7M3pO9-aGKnU"
 
-# Storage KV para Estado do Monitor
-[[kv_namespaces]]
-binding = "STATE_KV"
-id = "monitor_state_kv"
-
 # Configuração de Observabilidade e Logs
 [observability]
 enabled = false
